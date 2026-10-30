@@ -1,0 +1,53 @@
+# Workflow dựng bản macOS của Tổ Mèo Cam Launcher (30/10/2026).
+#
+# Đặt ở `.github/workflows/build-mac.yml` của repo công khai `anbuidevelopment/tomeocam-launcher`
+# (repo đó chỉ chứa release; máy macOS của GitHub Actions miễn phí cho repo công khai).
+# Bộ nguồn do `launcher/tools/mac/chuan_bi_nguon.py` gom trên Windows, đưa lên release `mac-nguon`
+# bằng `launcher/tools/mac/dang_mac.py`, script đó cũng gọi workflow này. Dựng hai bản: Apple Silicon
+# (macos-14) và Intel (macos-13), mỗi bản tự kiểm trong chính .app rồi mới đưa lên release `mac`.
+name: build-mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      nguon:
+        description: "Tên file bộ nguồn trên release mac-nguon (mac-nguon-<phiên bản>.zip)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  dung:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tải bộ nguồn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download mac-nguon --repo "${{ github.repository }}" --pattern "${{ inputs.nguon }}" --dir .
+          unzip -q "${{ inputs.nguon }}" -d nguon
+      - name: Dựng .app và tự kiểm
+        working-directory: nguon
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python dung_mac.py
+      - name: Đưa lên release mac
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mac --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create mac --repo "${{ github.repository }}" --title "Bản macOS (thử nghiệm)" \
+              --notes "Tổ Mèo Cam Launcher cho macOS, dành cho game Windows chạy qua CrossOver." --latest=false
+          gh release upload mac nguon/out/*.zip --repo "${{ github.repository }}" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.os }}
+          path: nguon/out/*.zip
